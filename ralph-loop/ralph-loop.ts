@@ -803,7 +803,16 @@ async function runSingleAgent(
 				try {
 					event = JSON.parse(line);
 				} catch {
-					return;
+					// Defensive: terminal escape sequences from extensions (e.g., pi-notify OSC 99,
+					// pi-ding BEL, tmux DCS passthrough) may contaminate RPC stdout, prepending
+					// garbage to JSON lines. Try to find the JSON object start after the prefix.
+					const jsonStart = line.indexOf('{');
+					if (jsonStart <= 0) return;
+					try {
+						event = JSON.parse(line.substring(jsonStart));
+					} catch {
+						return;
+					}
 				}
 
 				if (event.type === "response" && handleResponse(event)) {
