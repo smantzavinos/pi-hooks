@@ -912,12 +912,22 @@ const ChainItem = Type.Object({
 });
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
-	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
-	default: "user",
+	description: 'Which agent directories to use. Default: auto — uses "project" when a repo-local .pi/agents exists, otherwise "user". Use "both" to include both.',
 });
 
 const DEFAULT_LOOP_MAX_ITERATIONS = Number.MAX_SAFE_INTEGER;
 const DEFAULT_LOOP_SLEEP_MS = 1000;
+
+/**
+ * Resolve the effective agent scope when the caller omits agentScope.
+ * If the cwd is inside a repo with .pi/agents, default to "project".
+ * Otherwise default to "user".
+ */
+function resolveAgentScope(cwd: string, requestedScope?: AgentScope): AgentScope {
+	if (requestedScope) return requestedScope;
+	const discovery = discoverAgents(cwd, "both");
+	return discovery.projectAgentsDir ? "project" : "user";
+}
 
 const LoopParams = Type.Object({
 	conditionCommand: Type.Optional(
@@ -954,7 +964,7 @@ async function executeSubagentOnce(
 	registerActiveRun?: ActiveRunRegistration,
 	initialFollowUps?: string[],
 ): Promise<LoopExecutionResult> {
-	const agentScope: AgentScope = params.agentScope ?? "user";
+	const agentScope: AgentScope = resolveAgentScope(ctx.cwd, params.agentScope);
 	const discovery = discoverAgents(ctx.cwd, agentScope);
 	const agents = discovery.agents;
 	const confirmProjectAgents = params.confirmProjectAgents ?? true;
@@ -1167,7 +1177,7 @@ async function checkLoopCondition(
 }
 
 async function confirmProjectAgentsOnce(params: any, ctx: any): Promise<boolean> {
-	const agentScope: AgentScope = params.agentScope ?? "user";
+	const agentScope: AgentScope = resolveAgentScope(ctx.cwd, params.agentScope);
 	if (agentScope === "user" || !ctx.hasUI) return true;
 
 	const discovery = discoverAgents(ctx.cwd, agentScope);
@@ -1567,7 +1577,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: LoopParams,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const agentScope: AgentScope = params.agentScope ?? "user";
+			const agentScope: AgentScope = resolveAgentScope(ctx.cwd, params.agentScope);
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
 			const emptyPrompt: LoopPromptInfo = { mode: "single", items: [] };
@@ -1969,7 +1979,7 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme) {
-			const scope: AgentScope = args.agentScope ?? "user";
+			const scope: AgentScope | "auto" = args.agentScope ?? "auto";
 			const hasChain = Array.isArray(args.chain) && args.chain.length > 0;
 			const hasSingle = Boolean(args.agent || args.task);
 			const mode = hasChain ? `chain (${args.chain.length} steps)` : hasSingle ? `single ${args.agent || "(auto)"}` : "auto";
