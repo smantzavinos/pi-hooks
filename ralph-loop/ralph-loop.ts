@@ -596,6 +596,7 @@ async function runSingleAgent(
 		}
 
 		let wasAborted = false;
+		let processClosed = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const env = agent.permissionLevel
@@ -714,7 +715,7 @@ async function runSingleAgent(
 				resolveOnce(0);
 				proc.kill("SIGTERM");
 				setTimeout(() => {
-					if (!proc.killed) proc.kill("SIGKILL");
+					if (!processClosed) proc.kill("SIGKILL");
 				}, 2000);
 			};
 
@@ -834,6 +835,7 @@ async function runSingleAgent(
 			});
 
 			proc.on("close", (code) => {
+				processClosed = true;
 				if (buffer.trim()) processLine(buffer);
 				markStdinClosed(new Error("process closed"));
 				resolveOnce(code ?? 0);
@@ -850,7 +852,7 @@ async function runSingleAgent(
 					sendCommand({ type: "abort" }).catch(() => undefined);
 					proc.kill("SIGTERM");
 					setTimeout(() => {
-						if (!proc.killed) proc.kill("SIGKILL");
+						if (!processClosed) proc.kill("SIGKILL");
 					}, 5000);
 				};
 				if (signal.aborted) abortRpc();
